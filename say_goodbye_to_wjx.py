@@ -187,6 +187,7 @@ reorder_prob = normalized_reorder_prob
 
 
 print("往年都是我往群里发问卷，今年送大家一个小礼物，从github上修改的一个问卷星脚本")
+print("但目前仍有缺陷，无法处理跳题逻辑，只能按顺序处理")
 
 
 

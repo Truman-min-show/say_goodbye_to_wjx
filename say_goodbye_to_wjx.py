@@ -598,56 +598,55 @@ def submit(driver: WebDriver):
 
 
 def run(thread_id, xx, yy):
-    option = webdriver.ChromeOptions()
-    option.add_experimental_option("excludeSwitches", ["enable-automation"])
-    option.add_experimental_option("useAutomationExtension", False)
-    # option.add_argument("--headless")  # 可选: 无头模式，不在前台显示浏览器窗口
-    # option.add_argument("--disable-gpu") # 可选: 配合无头模式
-    # option.add_argument("--log-level=3") # 可选: 减少控制台日志输出
-    # option.add_argument("--blink-settings=imagesEnabled=false") # 可选：不加载图片，加快速度
-
     global cur_num, cur_fail, stop_flag
 
     while cur_num < target_num and not stop_flag:
-        driver = None # 初始化driver
+        # >>>>> 修改点：将 Options 初始化移到循环内部 <<<<<
+        option = webdriver.ChromeOptions()
+        option.add_experimental_option("excludeSwitches", ["enable-automation"])
+        option.add_experimental_option("useAutomationExtension", False)
+        #option.add_argument("--headless")  # 可选: 无头模式，不在前台显示浏览器窗口
+        # option.add_argument("--disable-gpu") # 可选: 配合无头模式
+        # option.add_argument("--log-level=3") # 可选: 减少控制台日志输出
+        # option.add_argument("--blink-settings=imagesEnabled=false") # 可选：不加载图片，加快速度
+
+        driver = None  # 初始化driver
         try:
             if use_ip:
                 ip_address = zanip()
                 if validate(ip_address):
                     option.add_argument(f"--proxy-server={ip_address}")
-                    # print(f"线程 {thread_id} 使用代理IP: {ip_address}") # 调试信息
+                    # print(f"线程 {thread_id} 使用代理IP: {ip_address}")
                 else:
                     logging.warning(f"线程 {thread_id} 获取的IP {ip_address} 无效，将使用本机IP。")
-                    # 移除可能存在的旧代理设置
-                    current_args = option.arguments
-                    option.arguments = [arg for arg in current_args if not arg.startswith('--proxy-server=')]
-            
+                    # >>>>> 修改点：移除了尝试修改 option.arguments 的代码 <<<<<
+
             driver = webdriver.Chrome(options=option)
-            driver.set_page_load_timeout(60) # 设置页面加载超时
+            driver.set_page_load_timeout(60)
             driver.set_window_size(550, 650)
             driver.set_window_position(x=xx, y=yy)
-            
+
             driver.execute_cdp_cmd(
                 "Page.addScriptToEvaluateOnNewDocument",
                 {"source": 'Object.defineProperty(navigator, "webdriver", {get: () => undefined})'}
             )
-            
+
             driver.get(url)
             url1 = driver.current_url
             brush(driver)
-            time.sleep(4) # 等待提交后页面跳转
+            time.sleep(4)
             url2 = driver.current_url
-            
-            if url1 != url2 or "finish" in url2 or "survey" not in url2.lower(): # 成功条件更灵活
+
+            if url1 != url2 or "finish" in url2 or "survey" not in url2.lower():
                 with lock:
-                    if cur_num < target_num : # 再次检查，避免超额计数
+                    if cur_num < target_num:
                         cur_num += 1
-                        print(f"线程 {thread_id}: 已填写 {cur_num}/{target_num} 份 - 失败 {cur_fail} 次 - {time.strftime('%H:%M:%S')}")
+                        print(
+                            f"线程 {thread_id}: 已填写 {cur_num}/{target_num} 份 - 失败 {cur_fail} 次 - {time.strftime('%H:%M:%S')}")
             else:
                 raise Exception("URL未跳转或跳转至错误页面，可能提交失败")
 
         except Exception as e:
-            # traceback.print_exc() # 打印详细错误，调试时开启
             logging.error(f"线程 {thread_id} 发生错误: {e}")
             with lock:
                 cur_fail += 1
@@ -658,15 +657,11 @@ def run(thread_id, xx, yy):
         finally:
             if driver:
                 driver.quit()
-            # 移除本次使用的代理，以便下次循环获取新的 (如果使用了代理)
-            if use_ip:
-                 current_args = option.arguments
-                 option.arguments = [arg for arg in current_args if not arg.startswith('--proxy-server=')]
-            
-            if stop_flag: # 如果需要停止，则线程退出循环
+
+
+            if stop_flag:
                 break
-        
-        # 控制请求频率，避免过快，可根据需要调整
+
         time.sleep(random.uniform(1, 3))
 
 

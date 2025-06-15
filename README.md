@@ -45,7 +45,13 @@
 
 ## 📖 使用方法
 
-### 方式一：使用GUI可视化版 (推荐)
+### 方式一：为普通用户 (下载免安装版)
+
+1.  前往本项目的 **[GitHub Releases](https://github.com/Truman-min-show/say_goodbye_to_wjx/releases)** 页面。
+2.  下载最新版本的 `.exe` 文件 (适用于Windows) 或 `.zip` 压缩包。
+3.  下载后，无需安装，直接双击运行程序即可。
+
+### 方式二：使用GUI可视化版 
 
 1.  在项目根目录下，运行主程序文件：
     ```bash
@@ -56,7 +62,7 @@
 4.  所有配置完成后，点击 **【开始任务】** 按钮。
 5.  如需获取更详细的输入格式和功能说明，请点击主界面右上角的 **【使用说明】** 按钮。
 
-### 方式二：使用命令行脚本版 (高级)
+### 方式三：使用命令行脚本版 
 
 这种方式需要你直接编辑 `say_goodbye_to_wjx.py` 文件来完成配置。
 
@@ -100,14 +106,3 @@
     python say_goodbye_to_wjx.py
     ```
 
----
-
-## 🛠️ 如何打包GUI版本 (开发者)
-
-如果你修改了GUI版本的源码，并希望生成自己的 `.exe` 文件，可以运行以下命令：
-```bash
-# 1. 安装pyinstaller
-pip install pyinstaller
-
-# 2. 执行打包命令
-pyinstaller --onefile --windowed --name 问卷星助手 app_gui.py

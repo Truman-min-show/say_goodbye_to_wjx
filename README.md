@@ -6,6 +6,8 @@
 
 *(GUI版本截图)*
 ![应用截图](./assets/main.png)
+*(设置选项概率界面)*
+![应用截图](./assets/choice.png)
 
 ---
 
@@ -36,7 +38,7 @@
     pip install -r requirements.txt
     ```
 
-3.  **准备浏览器驱动 (重要但这一步你可能不需要一般只要安装了chorm浏览器就可以了)**
+3.  **准备浏览器驱动 (重要)**
     本程序使用Selenium来驱动Chrome浏览器。你需要下载与你的Chrome浏览器版本匹配的ChromeDriver。
     * **最新驱动下载地址**: [https://googlechromelabs.github.io/chrome-for-testing/](https://googlechromelabs.github.io/chrome-for-testing/)
     * 下载后，请将 `chromedriver.exe` (Windows) 或 `chromedriver` (macOS/Linux) 文件放到你的Python安装目录下，或者一个在系统环境变量 `PATH` 中的路径，以确保程序能找到它。

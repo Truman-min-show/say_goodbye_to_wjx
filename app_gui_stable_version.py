@@ -7,238 +7,363 @@ import queue
 import json
 from survey_engine import SurveyRunner  # 导入我们的核心引擎
 
+"""
+class DynamicListFrame(ttk.Frame):
+    #一个可动态添加/删除行的框架控件（已修复数据提取错误）
 
-class BaseDynamicFrame(ttk.Frame):
-    """所有动态列表的基础框架，只负责提供容器和通用的删除/重绘逻辑"""
-
-    # 在 BaseDynamicFrame 类中，用此版本替换旧的 __init__ 方法
-    def __init__(self, parent, title, *args, **kwargs):
+    def __init__(self, parent, title, fields, *args, **kwargs):
         super().__init__(parent, *args, **kwargs)
+        self.fields = fields
         self.row_widgets = []
 
-        # --- UI设置部分 ---
-        self.canvas = tk.Canvas(self, borderwidth=0, highlightthickness=0)
-        scrollbar = ttk.Scrollbar(self, orient="vertical", command=self.canvas.yview)
-        self.scrollable_frame = ttk.Frame(self.canvas)
-
+        # --- UI设置部分（与之前相同）---
+        canvas = tk.Canvas(self, borderwidth=0)
+        scrollbar = ttk.Scrollbar(self, orient="vertical", command=canvas.yview)
+        self.scrollable_frame = ttk.Frame(canvas)
         self.scrollable_frame.bind(
             "<Configure>",
-            lambda e: self.canvas.configure(scrollregion=self.canvas.bbox("all"))
+            lambda e: canvas.configure(scrollregion=canvas.bbox("all"))
         )
-        self.canvas.create_window((0, 0), window=self.scrollable_frame, anchor="nw")
-        self.canvas.configure(yscrollcommand=scrollbar.set)
-
-        # --- 核心修复：更健壮的事件绑定逻辑 ---
-
-        # 1. 定义滚轮事件的处理函数
-        def _on_mousewheel(event):
-            # 根据不同平台的事件差异，计算滚动的单位
-            if event.num == 5 or event.delta < 0:
-                self.canvas.yview_scroll(1, "units")
-            if event.num == 4 or event.delta > 0:
-                self.canvas.yview_scroll(-1, "units")
-
-        # 2. 定义一个函数，用来将滚轮事件绑定到窗口上
-        def _bind_to_mousewheel(event):
-            self.canvas.bind_all("<MouseWheel>", _on_mousewheel)
-            self.canvas.bind_all("<Button-4>", _on_mousewheel)
-            self.canvas.bind_all("<Button-5>", _on_mousewheel)
-
-        # 3. 定义一个函数，用来解除绑定
-        def _unbind_from_mousewheel(event):
-            self.canvas.unbind_all("<MouseWheel>")
-            self.canvas.unbind_all("<Button-4>")
-            self.canvas.unbind_all("<Button-5>")
-
-        # 4. 当鼠标进入Canvas或其内部的Frame时，绑定事件
-        self.canvas.bind('<Enter>', _bind_to_mousewheel)
-        self.scrollable_frame.bind('<Enter>', _bind_to_mousewheel)
-        # 当鼠标离开时，解除绑定
-        self.canvas.bind('<Leave>', _unbind_from_mousewheel)
-        self.scrollable_frame.bind('<Leave>', _unbind_from_mousewheel)
-
-        # --- 界面布局部分（保持不变）---
+        canvas.create_window((0, 0), window=self.scrollable_frame, anchor="nw")
+        canvas.configure(yscrollcommand=scrollbar.set)
         header = ttk.Frame(self)
         header.pack(fill="x", pady=(0, 5))
         ttk.Label(header, text=title, font=("", 10, "bold")).pack(side="left")
-        ttk.Button(header, text="添加", command=lambda: self.add_row()).pack(side="right")
-        self.canvas.pack(side="left", fill="both", expand=True)
+        ttk.Button(header, text="添加", command=self.add_row).pack(side="right")
+        canvas.pack(side="left", fill="both", expand=True)
         scrollbar.pack(side="right", fill="y")
 
-    def _on_mousewheel(self, event):
-        """处理鼠标滚轮事件，滚动Canvas"""
-        # 根据不同平台的事件差异，计算滚动的单位
-        # 在Windows上，event.delta通常是120的倍数
-        # 在Linux上，event.num是4或5
-        if event.num == 5 or event.delta < 0:
-            self.canvas.yview_scroll(1, "units")
-        if event.num == 4 or event.delta > 0:
-            self.canvas.yview_scroll(-1, "units")
+    def add_row(self, data_vars_dict=None):
+        row_index = len(self.row_widgets)
 
-    def add_row(self, restored_data=None):
-        # 这个方法将由子类具体实现
-        raise NotImplementedError
+        row_frame = ttk.Frame(self.scrollable_frame)
+        row_frame.pack(fill="x", expand=True, pady=2)
 
-    def get_all_data(self):
-        # 这个方法将由子类具体实现
-        raise NotImplementedError
+        entry_vars = {}
+        ttk.Label(row_frame, text=f"题目 {row_index + 1}:").pack(side="left", padx=(0, 5))
+
+        for field_name, width in self.fields.items():
+            ttk.Label(row_frame, text=f"{field_name}:").pack(side="left")
+            entry_var = tk.StringVar()
+            # 如果是重绘，就恢复之前的值
+            if data_vars_dict and field_name in data_vars_dict:
+                entry_var.set(data_vars_dict[field_name])
+            ttk.Entry(row_frame, textvariable=entry_var, width=width).pack(side="left", fill="x", expand=True,
+                                                                           padx=(0, 5))
+            entry_vars[field_name] = entry_var
+
+        remove_button = ttk.Button(row_frame, text="删除", command=lambda idx=row_index: self.remove_row(idx))
+        remove_button.pack(side="right")
+
+        self.row_widgets.append({'frame': row_frame, 'vars': entry_vars})
 
     def remove_row(self, index):
-        """通用的删除和重绘逻辑"""
-        if not (0 <= index < len(self.row_widgets)): return
+        if not (0 <= index < len(self.row_widgets)):
+            return
 
         all_data = self.get_all_data()
-        if 0 <= index < len(all_data):
-            all_data.pop(index)
+        all_data.pop(index)
 
         for widget_info in self.row_widgets:
             widget_info['frame'].destroy()
         self.row_widgets = []
 
         for data_dict in all_data:
-            self.add_row(restored_data=data_dict)
+            self.add_row(data_vars_dict=data_dict)
+
+    # --- 这里是关键的修复 ---
+    def get_all_data(self):
+        #获取所有行的数据 (已修复)
+        all_data = []
+        # self.row_widgets 的结构是 [{'frame': ..., 'vars': {'概率': StringVar(), ...}}]
+        for row in self.row_widgets:
+            # 我们需要从每个StringVar中.get()出实际的字符串值
+            row_data = {field: var.get() for field, var in row['vars'].items()}
+            all_data.append(row_data)
+        # 现在返回的是正确的扁平结构: [{'概率': '80, 20'}, {'概率': '50, 50'}]
+        return all_data
+"""
 
 
-class DynamicListFrame(BaseDynamicFrame):
-    """用于单选、多选、矩阵、量表题的UI框架"""
+# 在 app_gui.py 文件中，用这个新类替换掉旧的 DynamicListFrame 类
+class DynamicListFrame(ttk.Frame):
+    """一个可动态添加/删除行的框架控件（已修复数据同步BUG）"""
 
     def __init__(self, parent, title, fields, *args, **kwargs):
-        # fields 参数在这里不再需要，但保留以兼容旧的调用方式
-        super().__init__(parent, title, *args, **kwargs)
+        super().__init__(parent, *args, **kwargs)
+        self.fields = fields
+        # row_widgets 将存储每一行所需的所有UI控件和变量
+        self.row_widgets = []
+
+        # --- UI设置部分（与之前相同）---
+        canvas = tk.Canvas(self, borderwidth=0, highlightthickness=0)
+        scrollbar = ttk.Scrollbar(self, orient="vertical", command=canvas.yview)
+        self.scrollable_frame = ttk.Frame(canvas)
+        self.scrollable_frame.bind(
+            "<Configure>",
+            lambda e: canvas.configure(scrollregion=canvas.bbox("all"))
+        )
+        canvas.create_window((0, 0), window=self.scrollable_frame, anchor="nw")
+        canvas.configure(yscrollcommand=scrollbar.set)
+        header = ttk.Frame(self)
+        header.pack(fill="x", pady=(0, 5))
+        ttk.Label(header, text=title, font=("", 10, "bold")).pack(side="left")
+        ttk.Button(header, text="添加", command=self.add_row).pack(side="right")
+        canvas.pack(side="left", fill="both", expand=True)
+        scrollbar.pack(side="right", fill="y")
+
+    def _generate_option_fields(self, parent_frame, num_options):
+        """根据选项数量，动态生成对应的输入字段"""
+        for widget in parent_frame.winfo_children():
+            widget.destroy()
+
+        entry_vars = []
+        options_container = ttk.Frame(parent_frame)
+        options_container.pack(fill='x', expand=True)
+
+        for i in range(num_options):
+            option_frame = ttk.Frame(options_container)
+            option_frame.grid(row=i // 5, column=i % 5, sticky='w', padx=5, pady=1)
+
+            ttk.Label(option_frame, text=f"选项 {i + 1}:").pack(side="left")
+            ttk.Entry(option_frame, width=10).pack(side="left")
+            #entry_var = tk.StringVar(value="1")
+            #ttk.Entry(option_frame, textvariable=entry_var, width=10).pack(side="left")
+            #entry_vars.append(entry_var)
+
+        return entry_vars
 
     def add_row(self, restored_data=None):
+        """在UI上添加一个完整的题目配置块"""
         row_index = len(self.row_widgets)
-        container = ttk.LabelFrame(self.scrollable_frame, text=f"题目 {row_index + 1}")
-        container.pack(fill="x", expand=True, pady=5, padx=5)
 
-        top_frame = ttk.Frame(container)
-        top_frame.pack(fill="x", pady=2)
-        options_frame = ttk.Frame(container)
-        options_frame.pack(fill="x", pady=2)
+        question_container = ttk.LabelFrame(self.scrollable_frame, text=f"题目 {row_index + 1}")
+        question_container.pack(fill="x", expand=True, pady=5, padx=5)
+
+        top_frame = ttk.Frame(question_container)
+        top_frame.pack(fill="x", expand=True, pady=2)
+
+        options_frame = ttk.Frame(question_container)
+        options_frame.pack(fill="x", expand=True, pady=(5, 2))
 
         ttk.Label(top_frame, text="选项数量:").pack(side="left")
 
-        initial_num = restored_data['num_options'] if restored_data else 4
-        num_var = tk.StringVar(value=str(initial_num))
+        num_options_var = tk.StringVar(value="4")
+        # --- 核心修改1：简化lambda，只传递必要的索引 ---
+        command_callback = lambda idx=row_index: self.update_option_entries(idx)
 
-        option_vars = []
+        num_options_spinbox = ttk.Spinbox(top_frame, from_=1, to=50, textvariable=num_options_var, width=5,
+                                          command=command_callback)
+        num_options_spinbox.pack(side="left", padx=5)
 
-        def _update_options():
-            nonlocal option_vars
-            for widget in options_frame.winfo_children():
-                widget.destroy()
+        remove_button = ttk.Button(top_frame, text="删除", command=lambda idx=row_index: self.remove_row(idx))
+        remove_button.pack(side="right")
 
-            try:
-                num = int(num_var.get())
-            except ValueError:
-                num = 0
+        # 将该行所需的所有关键信息都存储起来
+        widget_info = {
+            'frame': question_container,
+            'num_options_var': num_options_var,
+            'options_frame': options_frame,  # 存储选项父框架
+            'option_vars': []  # 初始化为空列表
+        }
+        self.row_widgets.append(widget_info)
 
-            new_vars = []
-            restored_values = restored_data['values'] if restored_data and len(restored_data['values']) == num else [
-                                                                                                                        ''] * num
+        # 如果是恢复数据，先设置选项数量，再调用更新
+        if restored_data:
+            num_options_var.set(str(len(restored_data)))
+            self.update_option_entries(row_index, restored_data)
+        else:  # 否则，只生成默认的选项框
+            self.update_option_entries(row_index)
 
-            for i in range(num):
-                opt_frame = ttk.Frame(options_frame)
-                opt_frame.grid(row=i // 5, column=i % 5, sticky='w', padx=5, pady=1)
-                ttk.Label(opt_frame, text=f"选项 {i + 1}:").pack(side="left")
-                entry_var = tk.StringVar(value=str(restored_values[i]))
-                ttk.Entry(opt_frame, textvariable=entry_var, width=10).pack(side="left")
-                new_vars.append(entry_var)
-            option_vars = new_vars
+    def update_option_entries(self, row_index, restored_values=None):
+        """当Spinbox值改变时，自动更新选项输入框"""
+        # --- 核心修改2：从self.row_widgets中获取信息，而不是依赖参数传递 ---
+        if not (0 <= row_index < len(self.row_widgets)): return
 
-        spinbox_cmd = lambda event=None: _update_options()
-        spinbox = ttk.Spinbox(top_frame, from_=1, to=50, textvariable=num_var, width=5, command=spinbox_cmd)
-        spinbox.bind("<Return>", spinbox_cmd)
-        spinbox.bind("<FocusOut>", spinbox_cmd)
-        spinbox.pack(side="left", padx=5)
+        widget_info = self.row_widgets[row_index]
+        parent_frame = widget_info['options_frame']
+        num_options_var = widget_info['num_options_var']
 
-        ttk.Button(top_frame, text="删除", command=lambda idx=row_index: self.remove_row(idx)).pack(side="right")
+        try:
+            num = int(num_options_var.get())
+            if num <= 0: return
+        except (ValueError, tk.TclError):
+            return
 
-        _update_options()  # 初始创建
+        entry_vars = self._generate_option_fields(parent_frame, num)
+        # 将新生成的变量列表存回数据模型
+        self.row_widgets[row_index]['option_vars'] = entry_vars
 
-        self.row_widgets.append({'frame': container, 'num_var': num_var, 'get_option_vars': lambda: option_vars})
+        # 如果是恢复数据，则填充值
+        if restored_values:
+            for i, value in enumerate(restored_values):
+                if i < len(entry_vars):
+                    entry_vars[i].set(str(value))
+
+    def remove_row(self, index):
+        """删除指定题目块并重绘"""
+        if not (0 <= index < len(self.row_widgets)): return
+
+        # --- 核心修改3：先从UI正确读取所有数据，再进行后续操作 ---
+        all_data = self.get_all_data()
+
+        if 0 <= index < len(all_data):
+            all_data.pop(index)
+
+        # 销毁所有旧的UI控件
+        for widget_info in self.row_widgets:
+            widget_info['frame'].destroy()
+        self.row_widgets = []  # 清空数据模型
+
+        # 用备份好的数据，安全地重建UI
+        for data_list in all_data:
+            self.add_row(restored_data=data_list)
 
     def get_all_data(self):
+        """从UI结构中获取所有数据（此方法逻辑已正确，无需修改）"""
         all_data = []
         for row in self.row_widgets:
-            num = int(row['num_var'].get())
-            vals = [var.get() for var in row['get_option_vars']()]
-            all_data.append({'num_options': num, 'values': vals})
+            try:
+                # 只获取有实际内容的输入框的值
+                data_list = [float(var.get()) for var in row['option_vars'] if var.get()]
+            except ValueError:  # 如果转换失败，则作为字符串获取
+                data_list = [var.get() for var in row['option_vars'] if var.get()]
+            all_data.append(data_list)
         return all_data
 
 
-class TextQuestionFrame(BaseDynamicFrame):
+# 在 app_gui.py 中，DynamicListFrame 类的下面，新增此类
+class TextQuestionFrame(DynamicListFrame):
     """为填空题定制的专用UI框架"""
 
-    def __init__(self, parent, title, fields, *args, **kwargs):
-        super().__init__(parent, title, *args, **kwargs)
-
     def add_row(self, restored_data=None):
+        """重写add_row，为每行创建“内容”和“概率”两个输入框"""
         row_index = len(self.row_widgets)
-        container = ttk.LabelFrame(self.scrollable_frame, text=f"题目 {row_index + 1}")
-        container.pack(fill="x", expand=True, pady=5, padx=5)
 
+        question_container = ttk.LabelFrame(self.scrollable_frame, text=f"题目 {row_index + 1}")
+        question_container.pack(fill="x", expand=True, pady=5, padx=5)
+
+        # --- UI修改点：直接创建两个字段 ---
         content_var = tk.StringVar()
         prob_var = tk.StringVar()
 
+        # 内容字段
+        content_frame = ttk.Frame(question_container)
+        content_frame.pack(fill='x', expand=True, padx=5, pady=2)
+        ttk.Label(content_frame, text="可选内容 (用,分隔):").pack(side="left")
+        ttk.Entry(content_frame, textvariable=content_var,width=50).pack(side="left", fill='x', expand=True)
+
+        # 概率字段
+        prob_frame = ttk.Frame(question_container)
+        prob_frame.pack(fill='x', expand=True, padx=5, pady=2)
+        ttk.Label(prob_frame, text="对应概率 (用,分隔):").pack(side="left")
+        ttk.Entry(prob_frame, textvariable=prob_var,width=50).pack(side="left", fill='x', expand=True)
+
+        # 删除按钮
+        remove_button = ttk.Button(question_container, text="删除", command=lambda idx=row_index: self.remove_row(idx))
+        remove_button.pack(side="right", pady=5)
+
+        widget_info = {
+            'frame': question_container,
+            'vars': {'内容': content_var, '概率': prob_var}  # 存储两个变量
+        }
+        self.row_widgets.append(widget_info)
+
+        # 恢复数据
         if restored_data:
             content_var.set(restored_data.get('内容', ''))
             prob_var.set(restored_data.get('概率', ''))
 
-        f1 = ttk.Frame(container)
-        f1.pack(fill='x', expand=True, padx=5, pady=2)
-        ttk.Label(f1, text="可选内容 (用,分隔):").pack(side="left")
-        ttk.Entry(f1, textvariable=content_var, width=50).pack(side="left", fill='x', expand=True)
-
-        f2 = ttk.Frame(container)
-        f2.pack(fill='x', expand=True, padx=5, pady=2)
-        ttk.Label(f2, text="对应概率 (用,分隔):").pack(side="left")
-        ttk.Entry(f2, textvariable=prob_var, width=50).pack(side="left", fill='x', expand=True)
-
-        ttk.Button(container, text="删除", command=lambda idx=row_index: self.remove_row(idx)).pack(side="right",
-                                                                                                    pady=5)
-
-        self.row_widgets.append({'frame': container, 'vars': {'内容': content_var, '概率': prob_var}})
-
     def get_all_data(self):
-        return [{'内容': r['vars']['内容'].get(), '概率': r['vars']['概率'].get()} for r in self.row_widgets]
+        """重写get_all_data，返回包含内容和概率的字典列表"""
+        all_data = []
+        for row in self.row_widgets:
+            row_data = {
+                '内容': row['vars']['内容'].get(),
+                '概率': row['vars']['概率'].get()
+            }
+            all_data.append(row_data)
+        return all_data
+
+    # remove_row 方法可以继承自 DynamicListFrame，因为其逻辑是通用的
+    # 但为了清晰，这里重写一下，确保调用的是本类的 add_row
+    def remove_row(self, index):
+        if not (0 <= index < len(self.row_widgets)): return
+        all_data = self.get_all_data()
+        all_data.pop(index)
+        for widget_info in self.row_widgets:
+            widget_info['frame'].destroy()
+        self.row_widgets = []
+        for data_dict in all_data:
+            self.add_row(restored_data=data_dict)
 
 
-class ReorderQuestionFrame(BaseDynamicFrame):
+# 在 app_gui.py 中，TextQuestionFrame 类的下面，新增此类
+class ReorderQuestionFrame(TextQuestionFrame):  # 可继续继承以复用remove_row等
     """为排序题定制的专用UI框架"""
 
-    def __init__(self, parent, title, fields, *args, **kwargs):
-        super().__init__(parent, title, *args, **kwargs)
-
     def add_row(self, restored_data=None):
+        """重写add_row，为排序题创建三个输入框"""
         row_index = len(self.row_widgets)
-        container = ttk.LabelFrame(self.scrollable_frame, text=f"题目 {row_index + 1}")
-        container.pack(fill="x", expand=True, pady=5, padx=5)
 
-        vars_dict = {
-            '选项权重': tk.StringVar(),
-            '首位权重': tk.StringVar(),
-            '选择数量': tk.StringVar(value="3")
+        question_container = ttk.LabelFrame(self.scrollable_frame, text=f"题目 {row_index + 1}")
+        question_container.pack(fill="x", expand=True, pady=5, padx=5)
+
+        # 创建三个输入框及其变量
+        options_weights_var = tk.StringVar()
+        first_place_weights_var = tk.StringVar()
+        num_to_select_var = tk.StringVar(value="3")
+
+        # 选项权重
+        f1 = ttk.Frame(question_container)
+        f1.pack(fill='x', expand=True, padx=5, pady=2)
+        ttk.Label(f1, text="选项权重 (格式 A:80,B:75):").pack(side="left")
+        ttk.Entry(f1, textvariable=options_weights_var,width=50).pack(side="left", fill='x', expand=True)
+
+        # 首位权重
+        f2 = ttk.Frame(question_container)
+        f2.pack(fill='x', expand=True, padx=5, pady=2)
+        ttk.Label(f2, text="首位权重 (格式 )A:60,B:40:").pack(side="left")
+        ttk.Entry(f2, textvariable=first_place_weights_var,width=50).pack(side="left", fill='x', expand=True)
+
+        # 选择数量
+        f3 = ttk.Frame(question_container)
+        f3.pack(fill='x', expand=True, padx=5, pady=2)
+        ttk.Label(f3, text="选择数量:").pack(side="left")
+        ttk.Entry(f3, textvariable=num_to_select_var, width=10).pack(side="left")
+
+        remove_button = ttk.Button(question_container, text="删除", command=lambda idx=row_index: self.remove_row(idx))
+        remove_button.pack(side="right", pady=5)
+
+        widget_info = {
+            'frame': question_container,
+            'vars': {
+                '选项权重': options_weights_var,
+                '首位权重': first_place_weights_var,
+                '选择数量': num_to_select_var
+            }
         }
+        self.row_widgets.append(widget_info)
+
         if restored_data:
-            for key, var in vars_dict.items():
-                var.set(restored_data.get(key, ''))
+            options_weights_var.set(restored_data.get('选项权重', ''))
+            first_place_weights_var.set(restored_data.get('首位权重', ''))
+            num_to_select_var.set(restored_data.get('选择数量', '3'))
 
-        for key, var in vars_dict.items():
-            frame = ttk.Frame(container)
-            frame.pack(fill='x', expand=True, padx=5, pady=2)
-            ttk.Label(frame, text=f"{key} (格式 A:80,B:75):" if key != '选择数量' else f"{key}:").pack(side="left")
-            ttk.Entry(frame, textvariable=var, width=50 if key != '选择数量' else 10).pack(side="left",
-                                                                                           fill='x' if key != '选择数量' else 'none',
-                                                                                           expand=True if key != '选择数量' else False)
-
-        ttk.Button(container, text="删除", command=lambda idx=row_index: self.remove_row(idx)).pack(side="right",
-                                                                                                    pady=5)
-
-        self.row_widgets.append({'frame': container, 'vars': vars_dict})
+    #  remove_row 方法可以完全继承自 TextQuestionFrame
 
     def get_all_data(self):
-        return [{key: var.get() for key, var in r['vars'].items()} for r in self.row_widgets]
+        """重写get_all_data，以正确获取排序题的数据"""
+        all_data = []
+        for row in self.row_widgets:
+            # 从排序题的三个输入框中提取数据
+            row_data = {
+                '选项权重': row['vars']['选项权重'].get(),
+                '首位权重': row['vars']['首位权重'].get(),
+                '选择数量': row['vars']['选择数量'].get()
+            }
+            all_data.append(row_data)
+        return all_data
 
 
 class SurveyApp:
@@ -503,26 +628,9 @@ class SurveyApp:
                 config[key] = prob_dict
                 continue  # 处理完排序题，跳过后续通用逻辑
 
-            # --- 核心修复：处理通用列表类题型 (单选, 多选等) ---
-            prob_dict = {}
-            for i, data_dict in enumerate(data_list):
-                # 1. 从数据结构中提取 'values' 列表
-                str_values = data_dict.get('values', [])
-
-                # 2. 将字符串列表转换为数字列表
-                num_values = []
-                for val in str_values:
-                    if val.strip():  # 只处理非空字符串
-                        try:
-                            # 尝试转换为浮点数，以支持小数
-                            num_values.append(float(val))
-                        except ValueError:
-                            # 如果转换失败（例如用户输入了文本），则忽略该值
-                            self.log_to_queue(f"警告：在 {key} 题目 {i + 1} 中发现非数字值 '{val}'，已忽略。")
-                            pass
-
-                prob_dict[str(i + 1)] = num_values
-
+            # --- 处理通用列表类题型 ---
+            for i, data in enumerate(data_list):
+                prob_dict[str(i + 1)] = data
             config[key] = prob_dict
 
         return config
@@ -553,10 +661,7 @@ class SurveyApp:
 
     ▶ 关于跳题逻辑
     本脚本目前【无法处理】问卷中的跳题逻辑（即根据某一题的答案显示或隐藏后续题目）。请确保您的问卷是按固定顺序从头到尾填写的，否则脚本可能会出错或提交失败。
-    
-    ▶ 关于题目配置
-    若您配置的选项数量或是题目数量与所填的问卷的实际内容不匹配，程序将在不匹配的题目上进行随机选择，对于填空题则填写“随机文本x”,x为一个随机数。
-    
+
     --- 主配置区 ---
 
     - 问卷链接: 粘贴您的问卷星问卷URL。
@@ -589,7 +694,7 @@ class SurveyApp:
          (注意：矩阵单选题的每个【小题】都需要单独添加一行配置。例如，一个有3个小题的矩阵单选题，需要在此选项卡下点击“添加”3次，并分别为这3个小题填写概率)
        - 多选题概率: 80,50,100
          (代表选项A有80%概率被选，B有50%，C有100%(必选))
-
+       
     ▶ 字典类 (填空题/排序题)
        填空题说明：格式为"内容1,内容2"以及"内容1的概率比,内容2的概率比"，每个之间用英文逗号 (,) 分隔。
          - 填空题内容: 本科, 硕士, 博士
